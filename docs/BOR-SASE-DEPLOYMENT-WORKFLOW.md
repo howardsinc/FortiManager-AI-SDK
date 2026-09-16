@@ -2,9 +2,9 @@
 
 **Audience**: Partner engineers deploying MSSP-scale FortiSASE BOR through FortiManager 7.6+, and AI assistants (Claude, etc.) picking up this repo cold.
 
-**Purpose**: End-to-end reference for the MSSP deployment model — how a tenant ADOM is prepped once (Phase 1), how each branch site is provisioned (Phase 2), and how the config is pushed to the device (Phase 3). Includes the machine-checkable **cross-repo contract** with the [FortiSASE-SDK](https://github.com/howardsinc3753/FortiSASE-SDK) config generator, the four supported BOR roles, the PRIMARY_POP alt-primary feature, and the 22 documented FMG 7.6 gotchas with resolutions.
+**Purpose**: End-to-end reference for the MSSP deployment model — how a tenant ADOM is prepped once (Phase 1), how each branch site is provisioned (Phase 2), and how the config is pushed to the device (Phase 3). Includes the machine-checkable **cross-repo contract** with the [FortiSASE-SDK](https://github.com/howardsinc/FortiSASE-SDK) config generator, the four supported BOR roles, the PRIMARY_POP alt-primary feature, and the 22 documented FMG 7.6 gotchas with resolutions.
 
-**Companion generator**: `.fmg.csv` files consumed by Phase 2 are produced by [`FortiSASE-SDK/automation/sdwan-ztp/config-generator/`](https://github.com/howardsinc3753/FortiSASE-SDK) (a schema-first Streamlit app + MSSP Deploy provisioning page). CSVs live under `fmg-export/hardware-blueprints/{VM,30G,50G,120G, DUAL/*, SPA-Hub/*, DUAL-SPA-Hub/*}/`.
+**Companion generator**: `.fmg.csv` files consumed by Phase 2 are produced by [`FortiSASE-SDK/automation/sdwan-ztp/config-generator/`](https://github.com/howardsinc/FortiSASE-SDK) (a schema-first Streamlit app + MSSP Deploy provisioning page). CSVs live under `fmg-export/hardware-blueprints/{VM,30G,50G,120G, DUAL/*, SPA-Hub/*, DUAL-SPA-Hub/*}/`.
 
 ---
 

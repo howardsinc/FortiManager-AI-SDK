@@ -12,7 +12,7 @@ Python SDK plus a 34-tool MCP collection covering discovery, authoring, change, 
 
 ```bash
 # 1. Clone
-git clone https://github.com/howardsinc3753/FortiManager-AI-SDK.git
+git clone https://github.com/howardsinc/FortiManager-AI-SDK.git
 cd FortiManager-AI-SDK
 
 # 2. Install deps (stdlib + pyyaml only)
@@ -187,7 +187,7 @@ Optional:
 
 ## Support
 
-- **Issues:** file at [github.com/howardsinc3753/FortiManager-AI-SDK/issues](https://github.com/howardsinc3753/FortiManager-AI-SDK/issues)
+- **Issues:** file at [github.com/howardsinc/FortiManager-AI-SDK/issues](https://github.com/howardsinc/FortiManager-AI-SDK/issues)
 - **Contact:** Daniel Howard, Fortinet Systems Engineer
 
 ---

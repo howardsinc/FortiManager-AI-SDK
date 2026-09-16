@@ -49,7 +49,7 @@ The BOR-SASE deployment model has two phases:
 ## Step 1: Clone the repo
 
 ```bash
-git clone https://github.com/howardsinc3753/FortiManager-AI-SDK.git
+git clone https://github.com/howardsinc/FortiManager-AI-SDK.git
 cd FortiManager-AI-SDK
 pip install pyyaml
 ```

@@ -104,7 +104,7 @@ If you're contributing a tool that only makes sense in your organization: don't 
 
 ## Reporting bugs
 
-Open an [issue](https://github.com/howardsinc3753/FortiManager-AI-SDK/issues) with:
+Open an [issue](https://github.com/howardsinc/FortiManager-AI-SDK/issues) with:
 1. **What tool** (canonical ID + version)
 2. **What you ran** (exact command)
 3. **What you got** (full JSON output — redact credentials)
