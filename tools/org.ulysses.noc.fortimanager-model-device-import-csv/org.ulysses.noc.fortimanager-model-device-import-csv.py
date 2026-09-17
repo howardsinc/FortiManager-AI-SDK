@@ -140,15 +140,26 @@ def _parse_csv(csv_path: str) -> tuple[List[Dict[str, str]], List[str]]:
     return rows, meta_cols
 
 
-def _resolve_blueprint_platform(client: FortiManagerClient, adom: str, blueprint_name: str, cache: Dict[str, str]) -> Optional[str]:
-    """Look up a blueprint's platform from FMG (cached)."""
+def _resolve_blueprint_platform(client: FortiManagerClient, adom: str, blueprint_name: str,
+                                cache: Dict[str, tuple[bool, Optional[str]]]) -> tuple[bool, Optional[str]]:
+    """Look up a blueprint in the target ADOM (cached). Returns (exists, platform).
+    v1.3.1: existence is reported separately - a blueprint the ADOM does not have used to
+    fall back silently to default_platform and be sent to FMG, which then failed the row with
+    the opaque 'error.internal'. The caller now refuses the run up front instead."""
     if blueprint_name in cache:
         return cache[blueprint_name]
     r = client.get(f"/pm/config/adom/{adom}/obj/fmg/device/blueprint/{blueprint_name}", fields=["name", "platform"])
+    st = (r.get("result", [{}])[0] or {}).get("status") or {}
     d = r.get("result", [{}])[0].get("data") or {}
-    plat = d.get("platform")
-    cache[blueprint_name] = plat
-    return plat
+    exists = st.get("code") == 0 and bool(d.get("name"))
+    out = (exists, d.get("platform") if exists else None)
+    cache[blueprint_name] = out
+    return out
+
+
+def _list_blueprints(client: FortiManagerClient, adom: str) -> List[str]:
+    r = client.get(f"/pm/config/adom/{adom}/obj/fmg/device/blueprint", fields=["name"])
+    return sorted(str(b.get("name")) for b in (r.get("result", [{}])[0].get("data") or []) if b.get("name"))
 
 
 def _status(resp: Dict[str, Any]) -> Dict[str, Any]:
@@ -479,7 +490,10 @@ _FMG_TASK_TOKENS: Dict[str, str] = {
     "devsnexist": ("serial {sn} is already registered on this FortiManager (in another ADOM). "
                    "FortiManager registers a serial once - delete the device from its home ADOM "
                    "first, or import into that ADOM."),
-    "devnameexist": "a device named '{name}' already exists in ADOM {adom}.",
+    "devnameused": "a device named '{name}' already exists in ADOM {adom} (with a different serial).",
+    "error.internal": ("FMG internal error adding '{name}'. Most common cause: the row's Device Blueprint "
+                       "does not exist in ADOM {adom} (v1.3.1 pre-checks this when "
+                       "resolve_blueprint_platform=true); otherwise check for an ADOM workspace lock."),
 }
 
 
@@ -516,7 +530,11 @@ async def _poll_task(client: FortiManagerClient, task_id: int, max_wait: int) ->
         if history:
             last_line = str(history[-1].get("detail") or "")[:200]
         for ln in data.get("line") or []:
-            if int(ln.get("err") or 0) != 0 or _norm_state(ln.get("state")) == "error":
+            # v1.3.1: FMG reports some add-dev-list failures as state=aborted with err=0
+            # (e.g. detail 'error.internal'), so key on any non-success terminal state
+            # OR a non-zero err - not just state=error.
+            ln_state = _norm_state(ln.get("state"))
+            if int(ln.get("err") or 0) != 0 or ln_state in ("error", "aborted", "cancelled"):
                 det = str(ln.get("detail") or "")
                 if not det:
                     lh = ln.get("history") or []
@@ -569,8 +587,8 @@ async def execute(params: Dict[str, Any]) -> Dict[str, Any]:
 
     # Client + blueprint platform cache
     client = None if dry_run else FortiManagerClient(host=fmg_host)
-    plat_cache: Dict[str, str] = {}
-
+    plat_cache: Dict[str, tuple[bool, Optional[str]]] = {}
+    missing_bp: Dict[str, List[str]] = {}  # v1.3.1: blueprint -> [row names] not in ADOM
     add_dev_list: List[Dict[str, Any]] = []
     for idx, row in enumerate(rows, start=1):
         name = row.get("Name") or ""
@@ -588,8 +606,10 @@ async def execute(params: Dict[str, Any]) -> Dict[str, Any]:
         # Platform resolution: prefer blueprint's platform if requested, else default
         platform = default_platform
         if resolve_bp and client is not None:
-            plat = _resolve_blueprint_platform(client, adom, blueprint, plat_cache)
-            if plat:
+            bp_exists, plat = _resolve_blueprint_platform(client, adom, blueprint, plat_cache)
+            if not bp_exists:
+                missing_bp.setdefault(blueprint, []).append(name)
+            elif plat:
                 platform = plat
 
         entry: Dict[str, Any] = {
@@ -619,6 +639,27 @@ async def execute(params: Dict[str, Any]) -> Dict[str, Any]:
         "add-dev-list": add_dev_list,
     }
     payload_snapshot = {"url": "/dvm/cmd/add/dev-list", "method": "exec", "data": data_body}
+
+    # v1.3.1: refuse the whole run before touching FMG if any row names a blueprint the
+    # target ADOM does not have. FMG's own answer to that is the opaque 'error.internal'.
+    if missing_bp:
+        available = _list_blueprints(client, adom) if client is not None else []
+        failed_rows = [
+            {"name": n, "blueprint": bp, "in_dvm": False,
+             "error": f"blueprint '{bp}' does not exist in ADOM {adom}"}
+            for bp, names in missing_bp.items() for n in names
+        ]
+        return {
+            "success": False, "action": "failed", "adom": adom, "csv_path": csv_path,
+            "rows_parsed": len(rows), "task_id": None, "task_state": "not_started",
+            "devices_created": [], "devices_failed": failed_rows,
+            "error": ("blueprint(s) not found in ADOM " + adom + ": "
+                      + ", ".join(sorted(missing_bp)) + ". Available in this ADOM: "
+                      + (", ".join(available) or "(none)")
+                      + ". Fix the CSV's Device Blueprint column, or run adom-init for the role "
+                      + "you need (e.g. bor-dual for BOR-DUAL-STD-*). Nothing was sent to FMG."),
+        }
+
 
     if dry_run:
         return {
@@ -698,6 +739,9 @@ async def execute(params: Dict[str, Any]) -> Dict[str, Any]:
                 record["existing_sn"] = probed_sn
                 record["error"] = (f"name collision: a device named '{entry['name']}' already exists in "
                                    f"ADOM {adom} with serial {probed_sn} (this CSV row has {entry['sn']}).")
+                _det = line_errors.get(entry["name"], "")
+                if _det:
+                    record["fmg_detail"] = _det
             if not record["in_dvm"] and "error" not in record:
                 det = line_errors.get(entry["name"]) or next(
                     (v for k, v in line_errors.items() if entry["name"] and entry["name"] in k), "")

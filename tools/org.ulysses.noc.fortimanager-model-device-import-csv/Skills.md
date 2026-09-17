@@ -172,7 +172,19 @@ All 4 steps happen in ONE tool call. Install is unblocked.
 }
 ```
 
-The second case is caught by the post-import probe comparing the probed device's serial to the CSV row (FMG itself emits no token for a name collision). The existing device is left untouched - it is never reported as created and its hostname is never rewritten.
+The second case is caught by the post-import probe comparing the probed device's serial to the CSV row; FMG's own token for it is `devnameused` (kept in `fmg_detail`). The existing device is left untouched - it is never reported as created and its hostname is never rewritten.
+
+**Refused before FMG (v1.3.1).** If any row names a `Device Blueprint` the target ADOM does not have, nothing is sent to FMG at all - FMG's answer to that is the opaque `error.internal`, so the tool checks first:
+
+```json
+{
+  "success": false, "action": "failed", "task_id": null, "task_state": "not_started",
+  "error": "blueprint(s) not found in ADOM BOR_Customer_1: BOR-DUAL-STD-50G. Available in this ADOM: BOR-SINGLE-STD-120G, BOR-SINGLE-STD-30G, ... Fix the CSV's Device Blueprint column, or run adom-init for the role you need (e.g. bor-dual for BOR-DUAL-STD-*). Nothing was sent to FMG.",
+  "devices_failed": [
+    {"name": "spoke-31", "blueprint": "BOR-DUAL-STD-50G", "in_dvm": false, "error": "blueprint 'BOR-DUAL-STD-50G' does not exist in ADOM BOR_Customer_1"}
+  ]
+}
+```
 
 ## Example
 
@@ -231,7 +243,9 @@ Live-tested 2026-08-25 on `BOR_Customer_1` importing spoke-2 (SN FGVMMLTM2601204
 | `FMG exec error: {'code': -3, ...}` | ADOM or blueprint doesn't exist | Verify ADOM + blueprint names |
 | `partial` action with `task_state: warning` | Some rows failed FMG-side | Inspect `devices_failed[]` + FMG task log |
 | `devices_failed[].fmg_detail` contains `devsnexist` | **v1.3.0** - serial already registered on this FMG, in another ADOM (FMG registers a serial once) | Delete the device from its home ADOM, or import into that ADOM. The MSSP Deploy page's `locate_serials` pre-flight catches this before import and names the home ADOM. |
-| `devices_failed[].existing_sn` present | **v1.3.0** - name collision: that name already exists in the ADOM with a different serial | Rename the CSV row, or delete the existing device. The existing device is untouched. |
+| `devices_failed[].existing_sn` present (`fmg_detail: devnameused`) | **v1.3.0** - name collision: that name already exists in the ADOM with a different serial | Rename the CSV row, or delete the existing device. The existing device is untouched. |
+| `error: "blueprint(s) not found in ADOM ..."` with `task_state: "not_started"` | **v1.3.1** - a row's `Device Blueprint` does not exist in the target ADOM. The run is refused BEFORE anything is sent to FMG; the message lists the blueprints the ADOM actually has. (Classic case: a `BOR-DUAL-STD-*` CSV against an ADOM built before the dual role existed.) | Fix the CSV's blueprint column, or run `adom-init` for the role you need. Requires `resolve_blueprint_platform=true` (default). |
+| `devices_failed[].fmg_detail: "error.internal"` (line `state: aborted`, `err: 0`) | FMG's opaque answer to add-dev-list when it cannot resolve the row - in practice the blueprint case above with the pre-check disabled, or an ADOM workspace lock | Re-run with `resolve_blueprint_platform=true`; check ADOM lock |
 | `error: "task read failed: ..."` | **v1.3.0** - FMG refused the task poll (perms/session) - not a timeout | Check API user rights on `/task/task`; re-run |
 
 ## Pairs With
