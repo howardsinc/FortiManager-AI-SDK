@@ -49,19 +49,17 @@ Before groups existed, we bound `scope member` device-by-device — every new sp
 - `object member` — space, NOT `object-member` (child endpoint suffix, mirrors the CLI template group `scope member` quirk)
 - `os_type` — underscore
 
-### ⚠ Member persistence / readback quirk (FMG 7.6.7)
+### Member readback (gotcha #10, corrected 2026-09-25)
 
-Writes on `object member` (`set` / `add` / `update`) all return `code=0 OK`, but the JSON-RPC API has **no read-back path** for group members. `GET` on the same child endpoint returns the PARENT group's metadata (not the member collection). The DEVICE side has no `grp` field either. Schema queries confirm `device_group.attr` has no `member` declared.
+Membership **does** read back over JSON-RPC - but only with the sub-table option:
+`get /dvmdb/adom/{adom}/group/{name}` with `option: ["object member"]` (also works on the
+group list endpoint). `fields: ["object member"]` returns the parent object only and silently
+omits the sub-table; that call shape is why this tool reported "no readback" from 2026-08 until
+the FortiSOAR team's re-bind check read it back fine. The tool now re-reads after every write:
 
-**FMG's own GUI reads membership through `/gui/adoms/{adom_oid}/groups/{grp_oid}?fields=memb` via `/cgi-bin/module/flatui_proxy` — that endpoint requires a session COOKIE (Bearer tokens are rejected as HTTP 400 "need session cookie").**
-
-Practical impact for this tool:
-- `member_count` in output = what we submitted (write returned OK)
-- `members_verified` = `null` (API cannot re-read)
-- `members_submitted` = the list you passed in, for your records
-- `verify_hint` string points to the GUI location to eye-check
-
-To confirm after running: **FMG GUI → Device Manager → {ADOM} → Device Group → {group name}**.
+- `members_verified` = the list FMG returned (real membership)
+- `members_missing` = entries you submitted that did not come back (normally `[]`; non-empty
+  means the write silently dropped something - investigate before trusting the group)
 
 ## Parameters
 
@@ -121,9 +119,9 @@ execute_certified_tool(
   "type": 0,
   "member_count": 1,
   "members_submitted": [{"name": "spoke-1", "vdom": "root"}],
-  "members_verified": null,
+  "members_verified": [{"name": "spoke-01", "vdom": "root"}],
+  "members_missing": [],
   "missing_devices": [],
-  "verify_hint": "FMG GUI: Device Manager -> BOR_Customer_1 -> Device Group -> BOR_Branch_Single"
 }
 ```
 
@@ -137,7 +135,8 @@ Note: `os_type`/`type` come back as integer enum values (FMG's internal rep — 
   "members_action": "set",
   "member_count": 0,
   "members_submitted": [],
-  "members_verified": null,
+  "members_verified": [{"name": "spoke-01", "vdom": "root"}],
+  "members_missing": [],
   ...
 }
 ```

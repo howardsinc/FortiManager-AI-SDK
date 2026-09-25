@@ -205,7 +205,7 @@ Organizational buckets per role. Downstream target for bulk-install, filtering, 
 - `object member` (space) NOT `object-member`
 - `os_type` (underscore); values: `fos`, `fsw`, `fpx`, `foc`, `faz`, `fml`
 
-**Membership readback quirk**: `set /dvmdb/adom/{a}/group/{g}/object member` succeeds (code=0) but JSON-RPC has no readback path. The GUI's `/gui/adoms/{oid}/groups/{oid}?fields=memb` (via `flatui_proxy`, session cookie only — API token rejected) is the only render path. Tool returns `members_submitted` + `members_verified: null` + `verify_hint`.
+**Membership readback**: `set`/`add` on `/dvmdb/adom/{a}/group/{g}/object member` returns code=0, and membership DOES read back — but only with `option: ["object member"]` on `get /dvmdb/adom/{a}/group/{g}` (or the group list). `fields: ["object member"]` silently returns nothing for the sub-table, which is why this was mis-catalogued as "no readback" until 2026-09-25 (corrected after the FortiSOAR team's re-bind check read it fine). Tools now verify and return `members_verified` (see gotcha #10).
 
 ---
 
@@ -239,7 +239,7 @@ One tool call replaces ~10 manual steps.
 | ⑦ | Auto-resolve blueprint refs | `get blueprint fields cliprofs, pkg` | Auto-fill template_group + policy_package |
 | ⑧ | Template group scope append | GET+extend+UPDATE `template-group/{grp}` | Dedup by (name,vdom). Usually "nothing to add" (blueprint auto-magic). Safe. |
 | ⑨ | Policy pkg scope append | Same on `/pm/pkg/adom/{a}/{pkg}` | Same auto-magic dedup |
-| ⑩ | Device group member add | `add /dvmdb/adom/{a}/group/{g}/object member` | Gotcha #10 no-readback |
+| ⑩ | Device group member add | `add /dvmdb/adom/{a}/group/{g}/object member` | Gotcha #10: verify with `option:["object member"]` |
 | ⑪ | Pre-create zone shells | `set /pm/config/device/{d}/vdom/{v}/{system,sdwan}/zone/{name}` | Gotcha #2 avoidance |
 | ⑫ | Dynamic_mapping add | `add /pm/config/adom/{a}/obj/dynamic/interface/{i}/dynamic_mapping` | Per-device normalized-interface binding |
 
@@ -489,7 +489,7 @@ Every gotcha below cost hours on a real deployment. Each has a fix baked into th
 
 **#9 — Meta var `_scope.vdom = "global"` NOT `"root"`** — ADOM meta vars aren't per-vdom. CSV imports handle automatically via `add-dev-list`. Direct API surgical updates: `/pm/config/adom/{a}/obj/fmg/variable/{VAR}/dynamic_mapping/{dev}/global`.
 
-**#10 — Device group `object member` write-then-read** — FMG 7.6.7 accepts `set /dvmdb/adom/{a}/group/{g}/object member` (code=0) but no JSON-RPC readback. GUI reads via `flatui_proxy` with session cookie. Fix: tool returns `members_submitted` + `members_verified: null` + `verify_hint`.
+**#10 — Device group `object member` readback needs `option`, not `fields`** — `set`/`add` on `/dvmdb/adom/{a}/group/{g}/object member` return code=0. Reading membership back works with `get /dvmdb/adom/{a}/group/{g}` **`option: ["object member"]`** (also on the group list endpoint) — the same sub-table idiom as `option: ["scope member"]` on packages. `fields: ["object member"]` returns the parent only and silently omits the sub-table, which is how this was mis-catalogued as "no JSON-RPC readback; GUI `flatui_proxy` only" from 2026-08 until 2026-09-25, when the FortiSOAR team's re-bind check read it back and we re-tested. Corrected: `device-group-create` and `model-device-import-csv` auto_bind now read existing members with `option`, add only the missing, re-read, and return `members_verified` (a real list) instead of `null` + a GUI hint.
 
 **#11 — Device DELETE endpoint payload shape** — `/dvm/cmd/del/device` requires `data.device` as plain string, not array/dict. Direct `delete /dvmdb/adom/{a}/device/{name}` returns -9. Fix: `exec /dvm/cmd/del/device` with `data: {adom, device: <string>}`. `/dvm/cmd/del/dev-list` fails silently (-20002).
 

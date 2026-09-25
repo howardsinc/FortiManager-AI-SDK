@@ -1,7 +1,7 @@
 ---
 canonical_id: org.ulysses.noc.fortimanager-device-group-create/1.0.0
 name: FortiManager Device Group Create
-version: 1.0.0
+version: 1.0.1
 description: >
   Create or update a FortiManager DVMDB Device Group in an ADOM, optionally
   seeding members. Groups are the tenant-scale organizational unit — put all

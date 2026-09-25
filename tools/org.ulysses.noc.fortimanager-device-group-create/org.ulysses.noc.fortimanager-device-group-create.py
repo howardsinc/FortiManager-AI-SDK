@@ -28,19 +28,12 @@ return -10):
   - `os_type`      (underscore, valid values: `fos`, `fsw`, `fpx`, `foc`, `faz`, `fml`, `fdd`, `fac`, `fca`)
 
 MEMBER PERSISTENCE / READBACK QUIRK — FMG 7.6.7 (discovered 2026-08-25):
-  Writes on `object member` (set, add, update) all return code=0 OK. However,
-  the JSON-RPC API has NO read-back path — GET on the same child endpoint
-  returns the parent group's metadata, not the member collection. The device
-  side has no `grp` field either. Schema queries confirm: `device_group` has
-  no `member` attribute declared.
-
-  The GUI reads membership via `/gui/adoms/{adom_oid}/groups/{grp_oid}?fields=memb`
-  through `/cgi-bin/module/flatui_proxy` — but that endpoint requires a session
-  COOKIE (Bearer token is rejected as "HTTP 400 need session cookie").
-
-  Practical impact:
-    - Tool cannot API-verify membership. `members_verified: null` in output.
-    - Return `members_submitted` (what we sent) instead of a readback.
+  Writes on `object member` (set, add, update) all return code=0 OK, and membership
+  READS BACK with `get /dvmdb/adom/{adom}/group/{name}` + `option: ["object member"]`
+  (the sub-table idiom; `fields: ["object member"]` returns the parent only and was the
+  reason this was mis-catalogued as "no readback" until 2026-09-25 - gotcha #10).
+    - Tool now re-reads membership after the write and returns `members_verified`
+      (real list) plus `members_missing` (submitted but not read back, normally []).
     - User should confirm via FMG GUI: Device Manager → Groups → {name}
     - `member_count` in output reflects what we submitted, not a fresh read.
 
@@ -208,10 +201,15 @@ async def execute(params: Dict[str, Any]) -> Dict[str, Any]:
                 }
             members_action = "replaced" if exists else "set"
 
-        # Read back for verification (parent group only — member readback is
-        # not supported on this API surface; see module docstring).
-        vresp = client.get(group_named_url, fields=["name", "oid", "desc", "type", "os_type"])
+        # Read back for verification, INCLUDING members (option=["object member"];
+        # gotcha #10 corrected 2026-09-25).
+        vresp = client.get(group_named_url, option=["object member"])
         vdata = (vresp.get("result", [{}])[0] or {}).get("data") or {}
+        members_verified = [{"name": m.get("name"), "vdom": m.get("vdom") or "root"}
+                            for m in (vdata.get("object member") or [])]
+        vkeys = {(m["name"], m["vdom"]) for m in members_verified}
+        members_missing = [m for m in members
+                           if (m.get("name"), m.get("vdom") or "root") not in vkeys] if raw_members is not None else []
 
         return {
             "success": True,
@@ -223,13 +221,10 @@ async def execute(params: Dict[str, Any]) -> Dict[str, Any]:
             "os_type": vdata.get("os_type"),
             "type": vdata.get("type"),
             "member_count": len(members),          # what we SENT (write returned code=0)
-            "members_submitted": members,          # what we sent — API can't read back
-            "members_verified": None,              # None = API-unreachable, not empty
+            "members_submitted": members,          # what we sent
+            "members_verified": members_verified,  # read back via option=["object member"]
+            "members_missing": members_missing,    # submitted but not read back (expect [])
             "missing_devices": missing_devices,
-            "verify_hint": (
-                f"FMG GUI: Device Manager -> {adom} -> Device Group -> {name} "
-                "(JSON-RPC has no member readback on this endpoint)"
-            ),
         }
 
     except Exception as e:

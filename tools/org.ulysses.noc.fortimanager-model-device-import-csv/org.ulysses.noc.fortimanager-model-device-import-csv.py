@@ -413,11 +413,12 @@ def _do_auto_bind(
             ),
         }
 
-    # 3. DVMDB Device Group object member (FMG 7.6.7: code=0 but no API readback)
+    # 3. DVMDB Device Group object member. v1.3.2: membership DOES read back via
+    #    option=["object member"] (gotcha #10 corrected) - read existing, add only the
+    #    missing entries, then re-read to verify.
     if dev_group:
         try:
-            # set replaces; use existing + new
-            g = client.get(f"/dvmdb/adom/{adom}/group/{dev_group}", fields=["name"])
+            g = client.get(f"/dvmdb/adom/{adom}/group/{dev_group}", option=["object member"])
             g_st = _status(g)
             if g_st.get("code") != 0:
                 out["device_group"] = {
@@ -426,23 +427,30 @@ def _do_auto_bind(
                     "msg": f"group not found: {g_st.get('message')}",
                 }
             else:
-                # DVMDB group has no readback for members, so we can only
-                # add-what's-in-created (we don't know existing membership).
-                r = client.call(
-                    "add",
-                    f"/dvmdb/adom/{adom}/group/{dev_group}/object member",
-                    data=new_entries,
-                )
-                st = _status(r)
+                existing = ((g.get("result", [{}])[0] or {}).get("data") or {}).get("object member") or []
+                have = {_member_key(m) for m in existing}
+                to_add = [m for m in new_entries if _member_key(m) not in have]
+                st: Dict[str, Any] = {"code": 0, "message": "nothing to add"}
+                if to_add:
+                    r = client.call(
+                        "add",
+                        f"/dvmdb/adom/{adom}/group/{dev_group}/object member",
+                        data=to_add,
+                    )
+                    st = _status(r)
+                g2 = client.get(f"/dvmdb/adom/{adom}/group/{dev_group}", option=["object member"])
+                verified = ((g2.get("result", [{}])[0] or {}).get("data") or {}).get("object member") or []
+                vkeys = {_member_key(m) for m in verified}
+                missing = [m for m in new_entries if _member_key(m) not in vkeys]
                 out["device_group"] = {
                     "group": dev_group,
                     "code": st.get("code"),
                     "msg": (st.get("message") or "")[:120],
                     "members_submitted": new_entries,
-                    "verified_via_api": False,  # FMG 7.6.7 quirk
-                    "verify_hint": (
-                        f"FMG GUI: Device Manager -> {adom} -> Device Groups -> {dev_group}"
-                    ),
+                    "members_added": to_add,
+                    "members_verified": [{"name": m.get("name"), "vdom": m.get("vdom")} for m in verified],
+                    "verified_via_api": True,
+                    **({"members_missing_after_add": missing} if missing else {}),
                 }
         except Exception as e:
             out["device_group"] = {
