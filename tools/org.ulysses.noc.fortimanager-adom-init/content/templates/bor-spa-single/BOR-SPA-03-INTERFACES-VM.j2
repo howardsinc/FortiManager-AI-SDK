@@ -3,7 +3,8 @@ config system interface
         set vdom "root"
         set type physical
         set alias "WAN"
-{% if WAN_MODE == "static" %}        set ip {{ WAN_IP }} {{ WAN_MASK }}
+{% if WAN_MODE == "static" %}        set mode static
+        set ip {{ WAN_IP }} {{ WAN_MASK }}
 {% else %}        set mode dhcp
         set distance {{ WAN_DHCP_DIST }}
 {% endif %}        set allowaccess ping https ssh fgfm
