@@ -461,7 +461,7 @@ config router bgp
 
 ---
 
-## 10. FMG 7.6 Gotcha Catalog (24 gotchas, all with resolutions)
+## 10. FMG 7.6 Gotcha Catalog (25 gotchas, all with resolutions)
 
 Every gotcha below cost hours on a real deployment. Each has a fix baked into the current tool + templates.
 
@@ -534,6 +534,10 @@ Every gotcha below cost hours on a real deployment. Each has a fix baked into th
 ### Optional Meta Vars
 
 **#24 — Empty-string meta var is `undefined` to FMG's Jinja; `{% if VAR %}` raises** — FMG resolves a meta var whose effective value is the empty string (ADOM default `''`, or a per-device mapping of `''`) as *undefined*, and its Jinja raises `parse cli template fail: 'VAR' is undefined` on ANY reference, including the test expression of an `{% if %}`. Python Jinja2 would treat it as falsy and skip the block, so a template that renders fine offline fails at FMG install-preview. First hit on `HUB_LOOPBACK` (SPA hub, per-device, intentionally blank when the engineer doesn't want a loopback): `{% if HUB_LOOPBACK %}` failed on both the unmapped and the explicit-`''` device. Gotcha #19 (`MGMT_GATEWAY`) was the same mechanism seen earlier and solved by deleting the branch; this is the general fix. Rule: **guard every optional meta var with `{% if VAR is defined and VAR %}`**. Verified 2026-09-10 against FMG 7.6.7 on a throwaway SPA hub: `is defined and VAR`, `VAR | default('')`, and `VAR is defined` all parse and skip the block on blank; the `is defined and VAR` form is used because it reads as intent and also rejects a defined-but-empty value if FMG ever changes the empty-string semantics. The CSV importer skips blank cells (no per-device mapping is written), so the real-world path is the unmapped case. Applied to `BOR-SPA-20-LOOPBACK`, `BOR-SPA-23-BGP-RR` and their `BOR-SPA-DUAL-*` twins.
+
+### Device-DB Semantics
+
+**#25 — `set ip` alone does not make a model-device interface static; write `set mode static` explicitly** — On a real FortiGate CLI, `set ip` on a DHCP interface implicitly switches it to static. FMG's device DB does not: `mode` keeps whatever the model device was seeded with, and `FortiGate-VM64-KVM` seeds `port1` as DHCP (`mode=1`), while `FortiGate-ARM64-AWS` seeds it static, which is why months of AWS spokes never showed it. A static-WAN CSV therefore installed as DHCP (aws-spoke-1, GreenField3, 2026-10-07; surfaced by the App-side session, FortiSASE-SDK `0ae3cc9` + their GOTCHAS #3). Fix (`7bac51a`): all eight `*-03-INTERFACES-{VM,HW}` templates emit `set mode static` immediately before `set ip` inside the static branch; the dhcp branch already wrote `set mode dhcp`. Verified live on a fresh VM64-KVM model device: old template → `mode=1`, no IP; fixed template → `mode=0`, IP applied. **Existing ADOMs are not fixed by pulling the repo** — re-push the eight templates with `cli-template-create overwrite=true` (targeted template re-push). Do NOT re-run `adom-init` against a populated ADOM for this: it is a greenfield builder and is suspected of wiping device bindings. A `--refresh-templates` mode for adom-init is the right future vehicle; until then the per-template overwrite is the supported path.
 
 ---
 

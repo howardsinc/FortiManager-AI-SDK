@@ -1,7 +1,7 @@
 ---
 canonical_id: org.ulysses.noc.fortimanager-adom-init/1.0.0
 name: FortiManager ADOM Init
-version: 1.0.0
+version: 1.0.1
 description: >
   Bootstrap a fresh FortiManager ADOM with the full BOR-SASE state - the
   Phase 1 (ADOM prep) of the BOR-SASE deployment workflow. Creates 56 meta
