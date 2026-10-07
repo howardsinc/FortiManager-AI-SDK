@@ -119,6 +119,8 @@ class AdomInitializer:
         for mv in self.manifest.get("meta_vars", []):
             name = mv["name"]
             default = self.tenant_config.get(name, mv.get("default") or "")
+            if name == "FMG_IP" and not default:
+                default = self.host  # FGFM pin target = the FMG we are provisioning on, unless the tenant overrides
             data = {"name": name, "value": default}
             if mv.get("description"):
                 data["description"] = mv["description"]

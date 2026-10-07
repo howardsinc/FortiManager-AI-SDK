@@ -23,6 +23,9 @@ meta_vars:
 - name: BASTION_MASK
   default: 255.255.255.255
   description: Bastion netmask
+- name: FMG_IP
+  default: ''
+  description: FortiManager address for FGFM - /32 pinned out the WAN underlay (blank = no route; adom-init defaults it to --fmg-host)
 - name: BGP_AS
   default: '65001'
   description: Tenant iBGP AS
