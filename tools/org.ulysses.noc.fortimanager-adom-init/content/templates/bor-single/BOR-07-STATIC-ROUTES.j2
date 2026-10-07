@@ -37,7 +37,7 @@ config router static
 {% endif %}        set device "{{ WAN_PORT }}"
         set comment "Bastion / management return path (trusted host)"
     next
-{% if FMG_IP %}    edit 12
+{% if FMG_IP is defined and FMG_IP %}    edit 12
         set dst {{ FMG_IP }} 255.255.255.255
 {% if WAN_MODE == "dhcp" %}        set dynamic-gateway enable
 {% else %}        set gateway {{ WAN_GATEWAY }}

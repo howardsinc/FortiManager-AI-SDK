@@ -461,7 +461,7 @@ config router bgp
 
 ---
 
-## 10. FMG 7.6 Gotcha Catalog (25 gotchas, all with resolutions)
+## 10. FMG 7.6 Gotcha Catalog (26 gotchas, all with resolutions)
 
 Every gotcha below cost hours on a real deployment. Each has a fix baked into the current tool + templates.
 
@@ -538,6 +538,10 @@ Every gotcha below cost hours on a real deployment. Each has a fix baked into th
 ### Device-DB Semantics
 
 **#25 — `set ip` alone does not make a model-device interface static; write `set mode static` explicitly** — On a real FortiGate CLI, `set ip` on a DHCP interface implicitly switches it to static. FMG's device DB does not: `mode` keeps whatever the model device was seeded with, and `FortiGate-VM64-KVM` seeds `port1` as DHCP (`mode=1`), while `FortiGate-ARM64-AWS` seeds it static, which is why months of AWS spokes never showed it. A static-WAN CSV therefore installed as DHCP (aws-spoke-1, GreenField3, 2026-10-07; surfaced by the App-side session, FortiSASE-SDK `0ae3cc9` + their GOTCHAS #3). Fix (`7bac51a`): all eight `*-03-INTERFACES-{VM,HW}` templates emit `set mode static` immediately before `set ip` inside the static branch; the dhcp branch already wrote `set mode dhcp`. Verified live on a fresh VM64-KVM model device: old template → `mode=1`, no IP; fixed template → `mode=0`, IP applied. **Existing ADOMs are not fixed by pulling the repo** — re-push the eight templates with `cli-template-create overwrite=true` (targeted template re-push). Do NOT re-run `adom-init` against a populated ADOM for this: it is a greenfield builder and is suspected of wiping device bindings. A `--refresh-templates` mode for adom-init is the right future vehicle; until then the per-template overwrite is the supported path.
+
+### Management Plane
+
+**#26 — FGFM follows the routing table: once BGP brings up the overlay default, management migrates onto the SASE tunnel** — FGFM is local-out traffic, so after the BOR tunnels come up and BGP installs the overlay default, the FortiGate's FGFM session re-sources via the tunnel; FMG then re-learns the PoP egress address as the device IP (spoke-1 was seen as `ip=176.23.135.206, mgmt_if=BOR_Primary`) and the next tunnel flap takes management with it. Fix (`a63a312`, content 1.0.2): tenant-scope meta var `FMG_IP` (adom-init defaults it to `--fmg-host`; contract v1.2 lists it as tenant scope, no CSV column) and a longest-prefix `/32` to the FMG out the WAN underlay in all four STATIC-ROUTES templates — route 12 via WAN1 (and 13 via WAN2 on the dual roles), `set gateway` when static, `set dynamic-gateway enable` when DHCP, exactly the existing bastion-route pattern. **Guard is `{% if FMG_IP is defined and FMG_IP %}`** (follow-up commit): the plain `{% if FMG_IP %}` form failed install with `'FMG_IP' is undefined` whenever the value was blank (gotcha #24), which broke the documented "blank = no route" case. Verified live: blank and unmapped install clean with no route 12/13; set installs route 12 `FMG_IP/32 dev WAN_PORT`. For existing ADOMs: create the `FMG_IP` meta var first (a template referencing an undeclared var is refused at write, gotcha #6), then re-push the four route templates with `cli-template-create overwrite=true`.
 
 ---
 
